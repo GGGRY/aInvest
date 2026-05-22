@@ -47,5 +47,4 @@ Thumbs.db
 # Project-specific
 .cache/
 .claude/
-data/
 CLAUDE.md

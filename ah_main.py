@@ -5,6 +5,7 @@ AH溢价轮动策略 — 回测入口
     python ah_main.py                                      # 默认参数
     python ah_main.py --top 10 --rebalance 20 --start 2022-01-01
     python ah_main.py --top 5 --rebalance 60 --start 2020-01-01
+    python ah_main.py --rank                               # 仅显示最新AH溢价排名
 """
 
 import argparse
@@ -71,17 +72,41 @@ def main():
     parser = argparse.ArgumentParser(description="AH溢价轮动策略回测")
     parser.add_argument("--top", type=int, default=10, help="持仓股票数量（默认10）")
     parser.add_argument("--rebalance", type=int, default=20, help="调仓频率/交易日（默认20）")
-    parser.add_argument("--start", default="2022-01-01", help="起始日期")
-    parser.add_argument("--end", default=None, help="截止日期")
+    parser.add_argument("--start", default="2022-01-01", help="起始日期 (YYYY-MM-DD)")
+    parser.add_argument("--end", default=None, help="截止日期 (YYYY-MM-DD)")
     parser.add_argument("--commission", type=float, default=0.0003, help="佣金费率")
     parser.add_argument("--slippage", type=float, default=0.001, help="滑点费率")
-    parser.add_argument("--verbose", action="store_true", default=True, help="打印调仓明细（默认开启）")
-    parser.add_argument("--no-verbose", dest="verbose", action="store_false", help="不打印调仓明细")
+    parser.add_argument("--verbose", action="store_true", default=False, help="打印调仓明细（默认关闭）")
+    parser.add_argument("--rank", action="store_true", default=False, help="仅显示最新AH溢价排名，不运行策略")
     args = parser.parse_args()
 
     # 1. 构建AH溢价面板
     print(f"构建AH溢价面板 (起始: {args.start}) ...")
     panel = build_premium_panel(start=args.start, end=args.end)
+
+    if args.rank:
+        latest_date = panel.index.get_level_values("date")[-1]
+        day_data = panel.loc[latest_date]
+        premiums = day_data["premium"].dropna().sort_values(ascending=False)
+
+        name_map = {}
+        for (dt, code), row in panel.iterrows():
+            name_map[code] = row.get("name", "")
+        name_map = {k: v for k, v in name_map.items() if v}
+
+        print(f"\nAH溢价排名 (数据日期: {latest_date.strftime('%Y-%m-%d')})")
+        print(f"{'='*72}")
+        print(f"{'排名':<6} {'代码':<8} {'名称':<14} {'A收盘':<10} {'H收盘':<10} {'溢价率':<10}")
+        print(f"{'-'*6} {'-'*8} {'-'*14} {'-'*10} {'-'*10} {'-'*10}")
+        for i, (code, premium) in enumerate(premiums.head(args.top).items(), 1):
+            name = name_map.get(code, code)
+            a_close = day_data.loc[code, "a_close"]
+            h_close = day_data.loc[code, "h_close"]
+            print(f"{i:<6} {code:<8} {name:<14} {a_close:<10.2f} {h_close:<10.2f} {premium:<10.2%}")
+
+        printed = min(args.top, len(premiums))
+        print(f"\n显示前 {printed} / {len(premiums)} 只AH股")
+        return
 
     # 2. 运行策略
     strategy = AHPremiumStrategy(
