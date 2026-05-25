@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{stock_name}({symbol}) 财务报告</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f5f5f5; color: #333; }}
+
+  .header {{
+    background: #1a1a2e; color: #fff; padding: 20px 32px;
+    display: flex; align-items: baseline; gap: 16px;
+  }}
+  .header h1 {{ font-size: 22px; font-weight: 600; }}
+  .header .code {{ font-size: 14px; color: #aaa; }}
+
+  .tab-bar {{
+    display: flex; gap: 0; background: #1a1a2e;
+    padding: 0 32px; border-bottom: 2px solid #e0e0e0;
+    justify-content: center;
+  }}
+  .tab-btn {{
+    padding: 12px 24px; border: none; background: transparent;
+    color: #999; font-size: 15px; cursor: pointer;
+    border-bottom: 3px solid transparent; margin-bottom: -2px;
+    font-family: inherit;
+  }}
+  .tab-btn:hover {{ color: #ccc; }}
+  .tab-btn.active {{ color: #fff; border-bottom-color: #e94560; }}
+
+  .content {{ max-width: 1400px; margin: 24px auto; padding: 0 32px; }}
+  .tab-panel {{ display: none; }}
+  .tab-panel.active {{ display: block; }}
+
+  .table-toolbar {{
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; gap: 16px;
+  }}
+  .summary {{ color: #666; font-size: 13px; }}
+  .toolbar-right {{ display: flex; align-items: center; gap: 12px; }}
+  .view-toggle,.report-filter {{
+    padding: 5px 10px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 13px; font-family: inherit; cursor: pointer; background: #fff; color: #333;
+  }}
+  .paginator {{
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: #666;
+  }}
+  .paginator button {{
+    padding: 5px 12px; border: 1px solid #ccc; border-radius: 4px;
+    background: #fff; cursor: pointer; font-size: 13px; font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+  }}
+  .paginator button:hover:not(:disabled) {{ background: #e8f0fe; border-color: #90b4e0; }}
+  .paginator button:disabled {{ opacity: 0.4; cursor: default; }}
+  .paginator select {{
+    padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 13px; font-family: inherit; cursor: pointer; background: #fff;
+  }}
+  .page-info {{ font-size: 13px; color: #999; min-width: 100px; text-align: center; }}
+
+  .table-wrap {{ overflow-x: auto; background: #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }}
+
+  table {{ border-collapse: collapse; font-size: 13px; white-space: nowrap; min-width: 100%; table-layout: fixed; }}
+  thead {{ background: #16213e; }}
+  thead th {{
+    position: sticky; top: 0; z-index: 1;
+    background: #16213e; color: #e0e0e0; padding: 10px 14px;
+    text-align: center; font-weight: 500; font-size: 12px;
+  }}
+  thead th:first-child {{
+    position: sticky; left: 0; z-index: 3;
+    text-align: left; width: 180px; background: #16213e;
+  }}
+  .m {{ /* metric-name */
+    position: sticky; left: 0; background: #fafafa;
+    font-weight: 500; padding: 8px 14px; text-align: left;
+    border-right: 1px solid #e0e0e0; width: 180px;
+  }}
+  .n {{ text-align: center; padding: 8px 14px; font-variant-numeric: tabular-nums; }} /* num-cell */
+  .x {{ color: #bbb; }} /* na */
+  tbody tr:nth-child(even) .m {{ background: #f0f0f0; }}
+  tbody tr:nth-child(even) .n {{ background: #fafafa; }}
+  tr.h .m, tr.h .n {{ font-weight: 700; }} /* highlight */
+  tbody tr:hover .m {{ background: #e8f0fe; }}
+  tbody tr:hover .n {{ background: #e8f0fe; }}
+
+  th[hidden], td[hidden] {{ display: none; }}
+
+  .footer {{ text-align: center; padding: 24px; color: #999; font-size: 12px; }}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>{stock_name}</h1>
+  <span class="code">{symbol}</span>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('利润表')">利润表</button>
+  <button class="tab-btn" onclick="switchTab('现金流量表')">现金流量表</button>
+  <button class="tab-btn" onclick="switchTab('资产负债表')">资产负债表</button>
+</div>
+
+<div class="content">
+  <div id="tab-利润表" class="tab-panel active">
+    <div class="table-toolbar">
+      <div class="summary">共 {count_income} 个科目, {count_income_periods} 个报告期</div>
+      <div class="toolbar-right">
+        <select class="view-toggle" onchange="switchView('利润表', this.value)">
+          <option value="cumulative">报告期</option>
+          <option value="single">单季度</option>
+        </select>
+        <select class="report-filter" onchange="applyFilter('利润表', this.value)">
+          <option value="全部">全部</option>
+          <option value="年报">年报</option>
+          <option value="一季报">一季报</option>
+          <option value="中报">中报</option>
+          <option value="三季报">三季报</option>
+        </select>
+        <div class="paginator" id="pager-利润表"></div>
+      </div>
+    </div>
+    <div class="table-wrap" id="view-利润表-cumulative"></div>
+    <div class="table-wrap" id="view-利润表-single" style="display:none;"></div>
+  </div>
+  <div id="tab-现金流量表" class="tab-panel">
+    <div class="table-toolbar">
+      <div class="summary">共 {count_cashflow} 个科目, {count_cashflow_periods} 个报告期</div>
+      <div class="toolbar-right">
+        <select class="view-toggle" onchange="switchView('现金流量表', this.value)">
+          <option value="cumulative">报告期</option>
+          <option value="single">单季度</option>
+        </select>
+        <select class="report-filter" onchange="applyFilter('现金流量表', this.value)">
+          <option value="全部">全部</option>
+          <option value="年报">年报</option>
+          <option value="一季报">一季报</option>
+          <option value="中报">中报</option>
+          <option value="三季报">三季报</option>
+        </select>
+        <div class="paginator" id="pager-现金流量表"></div>
+      </div>
+    </div>
+    <div class="table-wrap" id="view-现金流量表-cumulative"></div>
+    <div class="table-wrap" id="view-现金流量表-single" style="display:none;"></div>
+  </div>
+  <div id="tab-资产负债表" class="tab-panel">
+    <div class="table-toolbar">
+      <div class="summary">共 {count_balance} 个科目, {count_balance_periods} 个报告期</div>
+      <div class="toolbar-right">
+        <select class="report-filter" onchange="applyFilter('资产负债表', this.value)">
+          <option value="全部">全部</option>
+          <option value="年报">年报</option>
+          <option value="一季报">一季报</option>
+          <option value="中报">中报</option>
+          <option value="三季报">三季报</option>
+        </select>
+        <div class="paginator" id="pager-资产负债表"></div>
+      </div>
+    </div>
+    <div class="table-wrap" id="view-资产负债表"></div>
+  </div>
+</div>
+
+<div class="footer">数据来源: 新浪财经 | 生成时间: {timestamp}</div>
+
+<script>
+var DATA_income = {data_income};
+var DATA_income_sq = {data_income_sq};
+var DATA_balance = {data_balance};
+var DATA_cashflow = {data_cashflow};
+var DATA_cashflow_sq = {data_cashflow_sq};
+</script>
+
+<script>
+var COLS_PER_PAGE = 5;
+var pagers = {{}};
+
+function renderTable(data) {{
+  if (!data || !data.d || data.d.length === 0) {{
+    return '<table><thead><tr><th></th></tr></thead><tbody></tbody></table>';
+  }}
+  var parts = [];
+  parts.push('<table><thead><tr><th>科目</th>');
+  for (var i = 0; i < data.d.length; i++) {{
+    parts.push('<th>', data.d[i], '</th>');
+  }}
+  parts.push('</tr></thead><tbody>');
+  for (var mi = 0; mi < data.m.length; mi++) {{
+    var isH = data.h.indexOf(data.m[mi]) !== -1;
+    parts.push('<tr', isH ? ' class="h"' : '', '><td class="m">', data.m[mi], '</td>');
+    for (var di = 0; di < data.d.length; di++) {{
+      var v = data.v[mi][di];
+      parts.push('<td class="', v !== '—' ? 'n' : 'n x', '">', v, '</td>');
+    }}
+    parts.push('</tr>');
+  }}
+  parts.push('</tbody></table>');
+  return parts.join('');
+}}
+
+function getDataForTab(tabName) {{
+  if (tabName === '利润表') {{
+    var ve = document.querySelector('#tab-利润表 .view-toggle');
+    return (ve && ve.value === 'single') ? DATA_income_sq : DATA_income;
+  }}
+  if (tabName === '现金流量表') {{
+    var ve = document.querySelector('#tab-现金流量表 .view-toggle');
+    return (ve && ve.value === 'single') ? DATA_cashflow_sq : DATA_cashflow;
+  }}
+  return DATA_balance;
+}}
+
+function getActiveTableContainer(tabName) {{
+  if (tabName === '资产负债表') {{
+    return document.getElementById('view-资产负债表');
+  }}
+  var ve = document.querySelector('#tab-' + tabName + ' .view-toggle');
+  var view = (ve && ve.value === 'single') ? 'single' : 'cumulative';
+  return document.getElementById('view-' + tabName + '-' + view);
+}}
+
+function getFilteredCols(state) {{
+  var filter = state.filter || '全部';
+  if (filter === '全部') {{
+    var all = [];
+    for (var i = 1; i <= state.totalCols; i++) all.push(i);
+    return all;
+  }}
+  var filtered = [];
+  for (var i = 0; i < state.dates.length; i++) {{
+    if (state.dates[i].indexOf(filter) !== -1) filtered.push(i + 1);
+  }}
+  return filtered;
+}}
+
+function initPagination(tabName) {{
+  var data = getDataForTab(tabName);
+  if (!data || data.d.length === 0) return;
+
+  var totalCols = data.d.length;
+  var pagerEl = document.getElementById('pager-' + tabName);
+
+  var state = {{ page: 0, totalCols: totalCols, dates: data.d, filter: '全部' }};
+  pagers[tabName] = state;
+
+  state.renderButtons = function() {{
+    var filteredCols = getFilteredCols(state);
+    var totalFiltered = filteredCols.length;
+    if (totalFiltered === 0) {{
+      pagerEl.innerHTML = '<span class="page-info">无匹配报告期</span>';
+      return;
+    }}
+    var totalPages = Math.ceil(totalFiltered / COLS_PER_PAGE);
+    if (state.page >= totalPages) state.page = 0;
+
+    var html = '';
+    html += '<button onclick="goPage(\'' + tabName + '\', 0)" ' + (state.page === 0 ? 'disabled' : '') + '>|◁</button>';
+    html += '<button onclick="goPage(\'' + tabName + '\', ' + (state.page - 1) + ')" ' + (state.page === 0 ? 'disabled' : '') + '>◀</button>';
+    html += '<span class="page-info">第 <strong>' + (state.page + 1) + '</strong> / ' + totalPages + ' 页</span>';
+    html += '<button onclick="goPage(\'' + tabName + '\', ' + (state.page + 1) + ')" ' + (state.page >= totalPages - 1 ? 'disabled' : '') + '>▶</button>';
+    html += '<button onclick="goPage(\'' + tabName + '\', ' + (totalPages - 1) + ')" ' + (state.page >= totalPages - 1 ? 'disabled' : '') + '>▷|</button>';
+    html += ' <select onchange="goPage(\'' + tabName + '\', this.value)">';
+    for (var p = 0; p < totalPages; p++) {{
+      var startIdx = p * COLS_PER_PAGE;
+      var endIdx = Math.min((p + 1) * COLS_PER_PAGE - 1, totalFiltered - 1);
+      var start = state.dates[filteredCols[startIdx] - 1];
+      var end = state.dates[filteredCols[endIdx] - 1];
+      html += '<option value="' + p + '"' + (p === state.page ? ' selected' : '') + '>' + start + ' ~ ' + end + '</option>';
+    }}
+    html += '</select>';
+    pagerEl.innerHTML = html;
+  }};
+
+  state.renderButtons();
+  showPage(tabName, 0);
+}}
+
+function showPage(tabName, page) {{
+  var state = pagers[tabName];
+  if (!state) return;
+
+  var container = getActiveTableContainer(tabName);
+  var table = container ? container.querySelector('table') : null;
+  if (!table) return;
+
+  var filteredCols = getFilteredCols(state);
+  if (filteredCols.length === 0) {{
+    table.querySelectorAll('th, td').forEach(function(cell) {{
+      if (cell.cellIndex !== 0) cell.hidden = true;
+    }});
+    return;
+  }}
+
+  var totalPages = Math.ceil(filteredCols.length / COLS_PER_PAGE);
+  if (page >= totalPages) page = 0;
+  state.page = page;
+
+  var start = page * COLS_PER_PAGE;
+  var end = Math.min((page + 1) * COLS_PER_PAGE, filteredCols.length);
+  var visibleCols = {{}};
+  for (var i = start; i < end; i++) visibleCols[filteredCols[i]] = true;
+
+  table.querySelectorAll('th, td').forEach(function(cell) {{
+    var col = cell.cellIndex;
+    if (col === 0) return;
+    cell.hidden = !visibleCols[col];
+  }});
+
+  state.renderButtons();
+}}
+
+function applyFilter(tabName, value) {{
+  var state = pagers[tabName];
+  if (!state) return;
+  state.filter = value;
+  state.page = 0;
+  state.renderButtons();
+  showPage(tabName, 0);
+}}
+
+function switchView(tabName, view) {{
+  var cumDiv = document.getElementById('view-' + tabName + '-cumulative');
+  var singleDiv = document.getElementById('view-' + tabName + '-single');
+
+  if (view === 'single' && cumDiv.style.display !== 'none') {{
+    var cumTable = cumDiv.querySelector('table');
+    var singleTable = singleDiv.querySelector('table');
+    if (cumTable && singleTable) {{
+      var cumThs = cumTable.querySelectorAll('thead th');
+      var singleThs = singleTable.querySelectorAll('thead th');
+      for (var i = 0; i < Math.min(cumThs.length, singleThs.length); i++) {{
+        singleThs[i].style.minWidth = cumThs[i].getBoundingClientRect().width + 'px';
+      }}
+    }}
+  }}
+
+  cumDiv.style.display = view === 'cumulative' ? '' : 'none';
+  singleDiv.style.display = view === 'single' ? '' : 'none';
+  initPagination(tabName);
+}}
+
+function goPage(tabName, page) {{
+  showPage(tabName, page);
+}}
+
+function switchTab(name) {{
+  document.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+  document.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
+  document.querySelector('.tab-btn[onclick*="' + name + '"]').classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}}
+
+(function() {{
+  document.getElementById('view-利润表-cumulative').innerHTML = renderTable(DATA_income);
+  document.getElementById('view-利润表-single').innerHTML = renderTable(DATA_income_sq);
+  document.getElementById('view-现金流量表-cumulative').innerHTML = renderTable(DATA_cashflow);
+  document.getElementById('view-现金流量表-single').innerHTML = renderTable(DATA_cashflow_sq);
+  var bal = document.getElementById('view-资产负债表');
+  if (bal) bal.innerHTML = renderTable(DATA_balance);
+
+  initPagination('利润表');
+  initPagination('资产负债表');
+  initPagination('现金流量表');
+}})();
+</script>
+</body>
+</html>
