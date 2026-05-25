@@ -99,13 +99,30 @@
 </div>
 
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('利润表')">利润表</button>
+  <button class="tab-btn active" onclick="switchTab('关键指标')">关键指标</button>
+  <button class="tab-btn" onclick="switchTab('利润表')">利润表</button>
   <button class="tab-btn" onclick="switchTab('现金流量表')">现金流量表</button>
   <button class="tab-btn" onclick="switchTab('资产负债表')">资产负债表</button>
 </div>
 
 <div class="content">
-  <div id="tab-利润表" class="tab-panel active">
+  <div id="tab-关键指标" class="tab-panel active">
+    <div class="table-toolbar">
+      <div class="summary">共 {count_abstract} 个指标, {count_abstract_periods} 个报告期</div>
+      <div class="toolbar-right">
+        <select class="report-filter" onchange="applyFilter('关键指标', this.value)">
+          <option value="全部">全部</option>
+          <option value="年报">年报</option>
+          <option value="一季报">一季报</option>
+          <option value="中报">中报</option>
+          <option value="三季报">三季报</option>
+        </select>
+        <div class="paginator" id="pager-关键指标"></div>
+      </div>
+    </div>
+    <div class="table-wrap" id="view-关键指标"></div>
+  </div>
+  <div id="tab-利润表" class="tab-panel">
     <div class="table-toolbar">
       <div class="summary">共 {count_income} 个科目, {count_income_periods} 个报告期</div>
       <div class="toolbar-right">
@@ -168,6 +185,7 @@
 <div class="footer">数据来源: 新浪财经 | 生成时间: {timestamp}</div>
 
 <script>
+var DATA_abstract = {data_abstract};
 var DATA_income = {data_income};
 var DATA_income_sq = {data_income_sq};
 var DATA_balance = {data_balance};
@@ -203,6 +221,7 @@ function renderTable(data) {{
 }}
 
 function getDataForTab(tabName) {{
+  if (tabName === '关键指标') return DATA_abstract;
   if (tabName === '利润表') {{
     var ve = document.querySelector('#tab-利润表 .view-toggle');
     return (ve && ve.value === 'single') ? DATA_income_sq : DATA_income;
@@ -215,6 +234,9 @@ function getDataForTab(tabName) {{
 }}
 
 function getActiveTableContainer(tabName) {{
+  if (tabName === '关键指标') {{
+    return document.getElementById('view-关键指标');
+  }}
   if (tabName === '资产负债表') {{
     return document.getElementById('view-资产负债表');
   }}
@@ -355,6 +377,7 @@ function switchTab(name) {{
 }}
 
 (function() {{
+  document.getElementById('view-关键指标').innerHTML = renderTable(DATA_abstract);
   document.getElementById('view-利润表-cumulative').innerHTML = renderTable(DATA_income);
   document.getElementById('view-利润表-single').innerHTML = renderTable(DATA_income_sq);
   document.getElementById('view-现金流量表-cumulative').innerHTML = renderTable(DATA_cashflow);
@@ -362,6 +385,7 @@ function switchTab(name) {{
   var bal = document.getElementById('view-资产负债表');
   if (bal) bal.innerHTML = renderTable(DATA_balance);
 
+  initPagination('关键指标');
   initPagination('利润表');
   initPagination('资产负债表');
   initPagination('现金流量表');

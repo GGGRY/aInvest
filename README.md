@@ -42,7 +42,7 @@ python ah_main.py --rank --top 20
 python financial_report.py --symbol 000001
 ```
 
-将利润表、资产负债表、现金流量表导出为 HTML 文件，输出到 `output/` 目录。
+将关键指标、利润表、资产负债表、现金流量表导出为 HTML 文件，输出到 `output/` 目录。支持按报告期筛选和分页浏览。
 
 ## 项目结构
 

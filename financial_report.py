@@ -18,6 +18,7 @@ from data.financial_fetcher import (
     fetch_balance_sheet,
     fetch_income_statement,
     fetch_cash_flow,
+    fetch_financial_abstract,
 )
 
 REPORT_TYPES = ["利润表", "资产负债表", "现金流量表"]
@@ -59,6 +60,16 @@ _BALANCE_HIGHLIGHT = {
     "负债和所有者权益(或股东权益)总计",
     "所有者权益（或股东权益）合计",
     "负债和所有者权益（或股东权益）总计",
+}
+
+_ABSTRACT_HIGHLIGHT = {
+    "营业总收入", "净利润","归母净利润",
+    "扣非净利润", "经营现金流量净额",
+    "基本每股收益", "稀释每股收益",
+    "净资产收益率(ROE)", "总资产收益率",
+    "毛利率", "销售净利率", "期间费用率",
+    "资产负债率",
+    "营业总收入增长率", "归属母公司净利润增长率",
 }
 
 # ── stock name lookup ──────────────────────────────────────────────
@@ -158,6 +169,68 @@ def _build_json(raw: pd.DataFrame, report_type: str) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
+def _fmt_abstract_value(val, metric_name: str) -> str:
+    """Format financial abstract value based on metric type (amount / percentage / per-share)."""
+    if pd.isna(val):
+        return "—"
+    try:
+        num = float(val)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return str(val)
+
+    if any(kw in metric_name for kw in ("率", "收益率", "利润率", "占比", "比例")):
+        return f"{num:.2f}%"
+
+    if "每股" in metric_name:
+        return f"{num:.4f}"
+
+    yi = num / 1e8
+    if abs(yi) >= 0.01:
+        return f"{yi:,.2f}亿"
+    wan = num / 1e4
+    if abs(wan) >= 0.01:
+        return f"{wan:,.2f}万"
+    return f"{num:,.0f}"
+
+
+def _build_abstract_json(raw: pd.DataFrame) -> str:
+    """Build JSON for financial abstract data from stock_financial_abstract.
+
+    The raw DataFrame has columns ['选项', '指标', '20260331', '20251231', ...].
+    """
+    if raw is None or raw.empty:
+        return '{"d":[],"m":[],"h":[],"v":[]}'
+
+    df = raw.copy()
+    date_cols = [c for c in df.columns if c not in ("选项", "指标")]
+    parsed_dates = pd.to_datetime(date_cols, format="%Y%m%d", errors="coerce")
+    sorted_pairs = sorted(zip(date_cols, parsed_dates), key=lambda x: x[1], reverse=True)
+    sorted_cols = [p[0] for p in sorted_pairs]
+    dates = [_format_period(d) for _, d in sorted(zip(date_cols, parsed_dates), key=lambda x: x[1], reverse=True)]
+
+    metrics = df["指标"].tolist()
+    categories = df["选项"].tolist() if "选项" in df.columns else [""] * len(metrics)
+
+    unique_categories = set(c for c in categories if c)
+    if len(unique_categories) > 1:
+        display_names = [f"{c}→{m}" if c else m for c, m in zip(categories, metrics)]
+    else:
+        display_names = list(metrics)
+
+    highlights = [dn for dn, m in zip(display_names, metrics) if m in _ABSTRACT_HIGHLIGHT]
+
+    n_dates = len(sorted_cols)
+    values = []
+    for mi in range(len(metrics)):
+        row_vals = []
+        for di in range(n_dates):
+            row_vals.append(_fmt_abstract_value(df.iloc[mi][sorted_cols[di]], metrics[mi]))
+        values.append(row_vals)
+
+    data = {"d": dates, "m": display_names, "h": highlights, "v": values}
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
 def _to_single_quarter(df: pd.DataFrame) -> pd.DataFrame:
     """将累计报表数据转换为单季度数据（同一年内后一季度减前一季度）。"""
     if df.empty:
@@ -216,10 +289,16 @@ def _count_metrics(df: pd.DataFrame) -> tuple:
 def generate_html(symbol: str, stock_name: str) -> tuple[str, str]:
     name = stock_name or symbol
 
+    df_abstract = fetch_financial_abstract(symbol)
     df_income = fetch_income_statement(symbol)
     df_balance = fetch_balance_sheet(symbol)
     df_cashflow = fetch_cash_flow(symbol)
 
+    if df_abstract is not None and not df_abstract.empty:
+        ca = len(df_abstract)  # 指标数（行数）
+        pa = len([c for c in df_abstract.columns if c not in ("选项", "指标")])  # 报告期数
+    else:
+        ca, pa = 0, 0
     ci, pi = _count_metrics(df_income)
     cb, pb = _count_metrics(df_balance)
     cc, pc = _count_metrics(df_cashflow)
@@ -233,9 +312,11 @@ def generate_html(symbol: str, stock_name: str) -> tuple[str, str]:
     html = template.format(
         stock_name=name,
         symbol=symbol,
+        count_abstract=ca, count_abstract_periods=pa,
         count_income=ci, count_income_periods=pi,
         count_balance=cb, count_balance_periods=pb,
         count_cashflow=cc, count_cashflow_periods=pc,
+        data_abstract=_build_abstract_json(df_abstract),
         data_income=_build_json(df_income, "利润表"),
         data_income_sq=_build_json(_to_single_quarter(df_income), "利润表"),
         data_balance=_build_json(df_balance, "资产负债表"),
@@ -260,10 +341,11 @@ def main():
     else:
         print(f"  未查到名称，将用代码代替")
 
-    print("正在获取三张报表 ...")
-    print("  [1/3] 利润表 ...")
-    print("  [2/3] 资产负债表 ...")
-    print("  [3/3] 现金流量表 ...")
+    print("正在获取财务数据 ...")
+    print("  [1/4] 关键指标 ...")
+    print("  [2/4] 利润表 ...")
+    print("  [3/4] 资产负债表 ...")
+    print("  [4/4] 现金流量表 ...")
 
     html, latest_period = generate_html(args.symbol, stock_name)
 
